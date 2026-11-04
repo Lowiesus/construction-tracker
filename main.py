@@ -37,6 +37,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 # Create a database engine
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 N8N_INVOICE_WEBHOOK_URL = os.getenv("N8N_INVOICE_WEBHOOK_URL")
+N8N_WEBHOOK_SECRET = os.getenv("N8N_WEBHOOK_SECRET")
 
 
 def send_invoice_to_n8n(invoice_data: dict):
@@ -44,10 +45,17 @@ def send_invoice_to_n8n(invoice_data: dict):
         print("n8n webhook URL is not configured.")
         return
 
+    if not N8N_WEBHOOK_SECRET:
+        print("n8n webhook secret is not configured.")
+        return
+
     try:
         response = requests.post(
             N8N_INVOICE_WEBHOOK_URL,
             json=invoice_data,
+            headers={
+                "X-Webhook-Secret": N8N_WEBHOOK_SECRET
+            },
             timeout=5
         )
 
