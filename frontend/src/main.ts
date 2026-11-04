@@ -24,6 +24,24 @@ interface Project {
   status: "active" | "completed";
 }
 
+interface ProjectReport {
+  project_id: number;
+  project_name: string;
+  status: string;
+  contract_value: string;
+  invoice_count: number;
+  total_invoiced: string;
+  total_paid: string;
+  outstanding_balance: string;
+}
+
+interface Payment {
+  payment_id: number;
+  invoice_id: number;
+  amount: string;
+  payment_date: string;
+}
+
 interface Invoice {
   invoice_id: number;
   project_id: number;
@@ -82,6 +100,24 @@ const invoicesTableBody =
 
 const invoicesStatus =
   document.querySelector<HTMLParagraphElement>("#invoices-status");
+
+const invoiceForm =
+  document.querySelector<HTMLFormElement>("#invoice-form");
+
+const invoiceProjectInput =
+  document.querySelector<HTMLSelectElement>("#invoice-project");
+
+const invoiceAmountInput =
+  document.querySelector<HTMLInputElement>("#invoice-amount");
+
+const invoiceDueDateInput =
+  document.querySelector<HTMLInputElement>("#invoice-due-date");
+
+const invoiceFormStatus =
+  document.querySelector<HTMLParagraphElement>("#invoice-form-status");
+
+const invoiceSubmitButton =
+  document.querySelector<HTMLButtonElement>("#invoice-submit");
 
 const valueElements: Partial<Record<keyof DashboardSummary, HTMLElement | null>> = {
   total_projects: document.querySelector<HTMLElement>("#total-projects"),
@@ -169,6 +205,53 @@ async function getProjects(): Promise<Project[]> {
   return projects;
 }
 
+async function getProjectReports(): Promise<ProjectReport[]> {
+  const response = await fetch(`${API_BASE_URL}/reports/projects`, {
+    headers: { Accept: "application/json" },
+  });
+
+  if (!response.ok) {
+    throw new Error(`API returned ${response.status}`);
+  }
+
+  const reports: ProjectReport[] = await response.json();
+  return reports;
+}
+
+async function loadProjectOptions(): Promise<void> {
+  if (!invoiceProjectInput) return;
+
+  try {
+    const projects = await getProjects();
+
+    console.log("Projects loaded for dropdown:", projects);
+
+    invoiceProjectInput.replaceChildren();
+
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "Select a project";
+
+    invoiceProjectInput.appendChild(placeholder);
+
+    for (const project of projects) {
+      const option = document.createElement("option");
+
+      option.value = String(project.project_id);
+      option.textContent = project.project_name;
+
+      invoiceProjectInput.appendChild(option);
+    }
+  } catch (error) {
+    console.error("Could not load project options:", error);
+
+    if (invoiceFormStatus) {
+      invoiceFormStatus.textContent =
+        "Could not load projects. Check the API.";
+    }
+  }
+}
+
 async function getInvoices(): Promise<Invoice[]> {
   const response = await fetch(`${API_BASE_URL}/invoices`, {
     headers: {
@@ -185,6 +268,48 @@ async function getInvoices(): Promise<Invoice[]> {
   return invoices;
 }
 
+function renderProjectReports(reports: ProjectReport[]): void {
+  const tableBody = document.getElementById(
+    "projectReportsTableBody"
+  ) as HTMLTableSectionElement | null;
+
+  if (!tableBody) {
+    console.error("Project reports table body not found.");
+    return;
+  }
+
+  const escapeHTML = (value: string): string => {
+    return value.replace(/[&<>"']/g, (char) => {
+      const entities: Record<string, string> = {
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      };
+      return entities[char];
+    });
+  };
+
+  if (reports.length === 0) {
+    tableBody.innerHTML =
+      '<tr><td colspan="7" class="px-4 py-6 text-center text-slate-500">No project reports found.</td></tr>';
+    return;
+  }
+
+  tableBody.innerHTML = reports.map((report) => `
+    <tr class="border-t border-stone-100 hover:bg-stone-50/70">
+      <td class="px-4 py-3 font-medium text-slate-800">${escapeHTML(report.project_name)}</td>
+      <td class="px-4 py-3 capitalize text-slate-600">${escapeHTML(report.status)}</td>
+      <td class="whitespace-nowrap px-4 py-3 text-right tabular-nums">${formatMoney(report.contract_value)}</td>
+      <td class="px-4 py-3 text-right tabular-nums">${formatCount(report.invoice_count)}</td>
+      <td class="whitespace-nowrap px-4 py-3 text-right tabular-nums">${formatMoney(report.total_invoiced)}</td>
+      <td class="whitespace-nowrap px-4 py-3 text-right tabular-nums">${formatMoney(report.total_paid)}</td>
+      <td class="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums">${formatMoney(report.outstanding_balance)}</td>
+    </tr>
+  `).join("");
+}
+
 function renderInvoices(invoices: Invoice[]): void {
   if (!invoicesTableBody) return;
 
@@ -194,7 +319,7 @@ function renderInvoices(invoices: Invoice[]): void {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
 
-    cell.colSpan = 6;
+    cell.colSpan = 7;
     cell.className = "px-4 py-6 text-center text-slate-500";
     cell.textContent = "No invoices found.";
 
@@ -205,10 +330,10 @@ function renderInvoices(invoices: Invoice[]): void {
 
   for (const invoice of invoices) {
     const row = document.createElement("tr");
-    row.className = "border-t border-stone-100";
+    row.className = "border-t border-stone-100 hover:bg-stone-50/70";
 
     const invoiceIdCell = document.createElement("td");
-    invoiceIdCell.className = "px-4 py-3";
+    invoiceIdCell.className = "whitespace-nowrap px-4 py-3 tabular-nums text-slate-500";
     invoiceIdCell.textContent = String(invoice.invoice_id);
 
     const projectCell = document.createElement("td");
@@ -216,11 +341,11 @@ function renderInvoices(invoices: Invoice[]): void {
     projectCell.textContent = invoice.project_name;
 
     const amountCell = document.createElement("td");
-    amountCell.className = "px-4 py-3";
+    amountCell.className = "whitespace-nowrap px-4 py-3 text-right tabular-nums";
     amountCell.textContent = formatMoney(invoice.amount);
 
     const dueDateCell = document.createElement("td");
-    dueDateCell.className = "px-4 py-3";
+    dueDateCell.className = "whitespace-nowrap px-4 py-3";
 
     const dueDate = new Date(`${invoice.due_date}T00:00:00`);
 
@@ -229,12 +354,38 @@ function renderInvoices(invoices: Invoice[]): void {
       : dueDate.toLocaleDateString("en-PH");
 
     const paidCell = document.createElement("td");
-    paidCell.className = "px-4 py-3";
+    paidCell.className = "whitespace-nowrap px-4 py-3 text-right tabular-nums";
     paidCell.textContent = formatMoney(invoice.amount_paid);
 
     const outstandingCell = document.createElement("td");
-    outstandingCell.className = "px-4 py-3 font-semibold";
+    outstandingCell.className = "whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums";
     outstandingCell.textContent = formatMoney(invoice.outstanding_balance);
+
+    const actionCell = document.createElement("td");
+    actionCell.className = "whitespace-nowrap px-4 py-3";
+
+    const paymentButton = document.createElement("button");
+    paymentButton.type = "button";
+    paymentButton.textContent = "Record Payment";
+    paymentButton.dataset.invoiceId = String(invoice.invoice_id);
+    paymentButton.className =
+      "font-semibold text-emerald-700 hover:underline disabled:cursor-not-allowed disabled:opacity-40";
+
+    const historyButton = document.createElement("button");
+
+    historyButton.type = "button";
+    historyButton.textContent = "View History";
+    historyButton.dataset.action = "view-payments";
+    historyButton.dataset.invoiceId = String(invoice.invoice_id);
+
+    historyButton.className =
+      "mr-3 font-semibold text-blue-700 hover:underline";
+
+    actionCell.appendChild(historyButton);
+
+    paymentButton.disabled = Number(invoice.outstanding_balance) <= 0;
+
+    actionCell.appendChild(paymentButton);
 
     row.append(
       invoiceIdCell,
@@ -242,10 +393,32 @@ function renderInvoices(invoices: Invoice[]): void {
       amountCell,
       dueDateCell,
       paidCell,
-      outstandingCell
+      outstandingCell,
+      actionCell
     );
 
     invoicesTableBody.appendChild(row);
+  }
+}
+
+async function loadProjectReports(): Promise<void> {
+  const tableBody = document.getElementById(
+    "projectReportsTableBody"
+  ) as HTMLTableSectionElement | null;
+
+  try {
+    const reports = await getProjectReports();
+    renderProjectReports(reports);
+  } catch (error) {
+    console.error("Failed to load project reports:", error);
+
+    if (tableBody) {
+      tableBody.innerHTML = `
+        <tr>
+          <td colspan="7">Failed to load project reports.</td>
+        </tr>
+      `;
+    }
   }
 }
 
@@ -372,6 +545,56 @@ actionCell.append(editButton, deleteButton);
   }
 }
 
+invoicesTableBody?.addEventListener("click", async (event) => {
+  const target = event.target;
+
+  if (!(target instanceof HTMLButtonElement)) return;
+
+  if (target.dataset.action === "view-payments") {
+  const invoiceId = Number(target.dataset.invoiceId);
+
+  if (Number.isSafeInteger(invoiceId) && invoiceId > 0) {
+    await showPaymentHistory(invoiceId);
+  }
+
+  return;
+}
+
+  const invoiceId = Number(target.dataset.invoiceId);
+
+  if (!Number.isSafeInteger(invoiceId) || invoiceId <= 0) return;
+
+  const amount = window.prompt("Enter the payment amount (PHP):");
+
+  if (amount === null) return;
+
+  const paymentAmount = Number(amount);
+
+  if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
+    alert("Please enter a valid payment amount.");
+    return;
+  }
+
+  target.disabled = true;
+
+  try {
+    await recordPayment(invoiceId, amount);
+
+    alert("Payment recorded successfully!");
+
+    await Promise.all([
+      loadInvoices(),
+      loadDashboard(),
+      loadProjectReports(),
+    ]);
+  } catch (error) {
+    console.error("Payment failed:", error);
+    alert("Payment failed. Check the outstanding balance and API response.");
+  } finally {
+    target.disabled = false;
+  }
+});
+
 projectsTableBody?.addEventListener("click", async (event) => {
   const target = event.target;
 
@@ -415,7 +638,11 @@ projectsTableBody?.addEventListener("click", async (event) => {
         projectsStatus.textContent = "Project deleted successfully.";
       }
 
-      await Promise.all([loadProjects(), loadDashboard()]);
+      await Promise.all([
+        loadProjects(),
+        loadDashboard(),
+        loadProjectReports(),
+      ]);
     }
   } catch (error) {
     if (projectsStatus) {
@@ -470,6 +697,111 @@ async function createProject(
     throw new Error(`Could not create project: ${error}`);
   }
 }
+
+async function createInvoice(
+  projectId: number,
+  amount: string,
+  dueDate: string
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/invoices`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      project_id: projectId,
+      amount: amount,
+      due_date: dueDate,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Could not create invoice: ${await response.text()}`
+    );
+  }
+}
+
+async function getInvoicePayments(
+  invoiceId: number
+): Promise<Payment[]> {
+  const response = await fetch(
+    `${API_BASE_URL}/invoices/${invoiceId}/payments`,
+    {
+      headers: {
+        Accept: "application/json",
+      },
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`API returned ${response.status}`);
+  }
+
+  return await response.json();
+}
+
+invoiceForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  if (
+    !invoiceProjectInput ||
+    !invoiceAmountInput ||
+    !invoiceDueDateInput ||
+    !invoiceFormStatus
+  ) {
+    return;
+  }
+
+  const projectId = Number(invoiceProjectInput.value);
+  const amount = invoiceAmountInput.value;
+  const dueDate = invoiceDueDateInput.value;
+
+  if (
+    !Number.isSafeInteger(projectId) ||
+    projectId <= 0 ||
+    !Number.isFinite(Number(amount)) ||
+    Number(amount) <= 0 ||
+    !dueDate
+  ) {
+    invoiceFormStatus.textContent =
+      "Please enter valid invoice details.";
+    return;
+  }
+
+  if (invoiceSubmitButton) {
+    invoiceSubmitButton.disabled = true;
+  }
+
+  invoiceFormStatus.textContent = "Creating invoice...";
+
+  try {
+    await createInvoice(projectId, amount, dueDate);
+    await loadProjectOptions();
+    await loadProjectReports();
+
+    invoiceForm.reset();
+
+    invoiceFormStatus.textContent =
+      "Invoice created successfully!";
+
+    await Promise.all([
+      loadInvoices(),
+      loadDashboard(),
+      loadProjectReports(),
+    ]);
+  } catch (error) {
+    invoiceFormStatus.textContent =
+      "Could not create invoice. Check the API.";
+
+    console.error("Invoice creation failed:", error);
+  } finally {
+    if (invoiceSubmitButton) {
+      invoiceSubmitButton.disabled = false;
+    }
+  }
+});
 
 async function updateProject(
   projectId: number,
@@ -558,7 +890,11 @@ projectForm?.addEventListener("submit", async (event) => {
 
 resetProjectForm();
 
-await Promise.all([loadProjects(), loadDashboard()]);
+await Promise.all([
+  loadProjects(),
+  loadDashboard(),
+  loadProjectReports(),
+]);
 });
 
 async function loadDashboard(): Promise<void> {
@@ -596,15 +932,66 @@ async function loadDashboard(): Promise<void> {
   }
 }
 
+async function showPaymentHistory(invoiceId: number): Promise<void> {
+  const section = document.querySelector<HTMLElement>("#payment-history");
+  const status = document.querySelector<HTMLElement>("#payment-history-status");
+  const list = document.querySelector<HTMLElement>("#payment-history-list");
+
+  if (!section || !status || !list) return;
+
+  section.hidden = false;
+  status.textContent = "Loading payment history...";
+  list.replaceChildren();
+
+  try {
+    const payments = await getInvoicePayments(invoiceId);
+
+    status.textContent = `Invoice #${invoiceId} — ${payments.length} payment(s)`;
+
+    if (payments.length === 0) {
+      list.textContent = "No payments recorded yet.";
+      return;
+    }
+
+    for (const payment of payments) {
+      const item = document.createElement("div");
+
+      item.className =
+        "flex justify-between gap-4 border-b border-stone-100 py-3 text-sm";
+
+      const details = document.createElement("span");
+      details.textContent =
+        `Payment #${payment.payment_id} · ${payment.payment_date}`;
+
+      const amount = document.createElement("strong");
+      amount.textContent = formatMoney(payment.amount);
+
+      item.append(details, amount);
+      list.appendChild(item);
+    }
+  } catch (error) {
+    status.textContent = "Could not load payment history.";
+    console.error("Payment history failed:", error);
+  }
+}
+
 refreshButton?.addEventListener("click", () => {
   void loadDashboard();
   void loadProjects();
   void loadInvoices();
+  void loadInvoices();
+  void loadProjectOptions();
+  void loadProjectReports();
 });
 
 void loadDashboard();
 void loadProjects();
 void loadInvoices();
+void loadInvoices();
+void loadProjectOptions();
+void loadProjectOptions();
+void loadProjectReports();
+
 getProjects()
   .then((projects) => {
     console.log("Projects retrieved:", projects);
@@ -612,3 +999,34 @@ getProjects()
   .catch((error) => {
     console.error("Could not retrieve projects:", error);
   });
+function recordPayment(invoiceId: number, amount: string) {
+  return (async (): Promise<void> => {
+    const paymentAmount = amount.trim();
+
+    if (
+      !Number.isSafeInteger(invoiceId) ||
+      invoiceId <= 0 ||
+      !decimalPattern.test(paymentAmount) ||
+      !Number.isFinite(Number(paymentAmount)) ||
+      Number(paymentAmount) <= 0
+    ) {
+      throw new Error("Invalid invoice ID or payment amount.");
+    }
+
+    const response = await fetch(
+      `${API_BASE_URL}/invoices/${invoiceId}/payments`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({ amount: paymentAmount }),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Could not record payment: ${await response.text()}`);
+    }
+  })();
+}

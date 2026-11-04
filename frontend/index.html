@@ -196,6 +196,58 @@
   </div>
 
   <section class="py-8" aria-labelledby="invoices-heading">
+    <div class="mb-6 rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
+    <h3 class="mb-4 text-base font-bold">Create an invoice</h3>
+
+    <form id="invoice-form" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+
+        <label class="text-sm font-medium text-slate-700">
+        Project
+        <select
+            id="invoice-project"
+            required
+            class="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2"
+        >
+            <option value="">Select a project</option>
+        </select>
+        </label>
+
+        <label class="text-sm font-medium text-slate-700">
+        Invoice amount (PHP)
+        <input
+            id="invoice-amount"
+            type="number"
+            min="0.01"
+            step="0.01"
+            required
+            placeholder="55000"
+            class="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2"
+        />
+        </label>
+
+        <label class="text-sm font-medium text-slate-700">
+        Due date
+        <input
+            id="invoice-due-date"
+            type="date"
+            required
+            class="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2"
+        />
+        </label>
+
+        <div>
+        <button
+            id="invoice-submit"
+            type="submit"
+            class="rounded-lg bg-emerald-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-emerald-800"
+        >
+            Create invoice
+        </button>
+        </div>
+    </form>
+
+    <p id="invoice-form-status" class="mt-3 text-sm" role="status"></p>
+    </div>
   <div class="mb-5">
     <p class="mb-1 text-xs font-bold tracking-widest text-emerald-700">
       FINANCIAL MANAGEMENT
@@ -209,21 +261,23 @@
   </div>
 
   <div class="overflow-x-auto rounded-2xl border border-stone-200 bg-white shadow-sm">
-    <table class="w-full text-left text-sm">
-      <thead class="bg-stone-100 text-xs uppercase text-slate-500">
+    <table class="min-w-[760px] w-full text-left text-sm">
+      <caption class="sr-only">Invoices, due dates, payments, balances, and actions</caption>
+      <thead class="bg-stone-100 text-xs uppercase tracking-wide text-slate-500">
         <tr>
-          <th class="px-4 py-3">Invoice ID</th>
-          <th class="px-4 py-3">Project</th>
-          <th class="px-4 py-3">Amount</th>
-          <th class="px-4 py-3">Due date</th>
-          <th class="px-4 py-3">Paid</th>
-          <th class="px-4 py-3">Outstanding</th>
+          <th scope="col" class="whitespace-nowrap px-4 py-3">Invoice ID</th>
+          <th scope="col" class="px-4 py-3">Project</th>
+          <th scope="col" class="whitespace-nowrap px-4 py-3 text-right">Amount</th>
+          <th scope="col" class="whitespace-nowrap px-4 py-3">Due date</th>
+          <th scope="col" class="whitespace-nowrap px-4 py-3 text-right">Paid</th>
+          <th scope="col" class="whitespace-nowrap px-4 py-3 text-right">Outstanding</th>
+          <th scope="col" class="whitespace-nowrap px-4 py-3">Actions</th>
         </tr>
       </thead>
 
       <tbody id="invoices-table-body">
         <tr>
-          <td colspan="6" class="px-4 py-6 text-center text-slate-500">
+          <td colspan="7" class="px-4 py-6 text-center text-slate-500">
             Loading invoices...
           </td>
         </tr>
@@ -234,7 +288,59 @@
   <p id="invoices-status" class="mt-3 text-sm text-slate-500" role="status"></p>
 </section>
 
+<section class="py-6" aria-labelledby="project-reports-heading">
+  <div class="mb-5">
+    <p class="mb-1 text-xs font-bold tracking-widest text-emerald-700">
+      SUMMARY
+    </p>
+    <h2 id="project-reports-heading" class="text-2xl font-bold text-slate-900">
+      Project financial reports
+    </h2>
+    <p class="mt-1 text-sm text-slate-500">
+      Compare contract values, invoices, and balances by project.
+    </p>
+  </div>
+
+  <div class="overflow-x-auto rounded-2xl border border-stone-200 bg-white shadow-sm">
+    <table class="min-w-[780px] w-full text-left text-sm">
+      <caption class="sr-only">Financial summary for each project</caption>
+      <thead class="bg-stone-100 text-xs uppercase tracking-wide text-slate-500">
+        <tr>
+          <th scope="col" class="px-4 py-3">Project</th>
+          <th scope="col" class="px-4 py-3">Status</th>
+          <th scope="col" class="whitespace-nowrap px-4 py-3 text-right">Contract value</th>
+          <th scope="col" class="whitespace-nowrap px-4 py-3 text-right">Invoices</th>
+          <th scope="col" class="whitespace-nowrap px-4 py-3 text-right">Total invoiced</th>
+          <th scope="col" class="whitespace-nowrap px-4 py-3 text-right">Total paid</th>
+          <th scope="col" class="whitespace-nowrap px-4 py-3 text-right">Outstanding</th>
+        </tr>
+      </thead>
+
+      <tbody id="projectReportsTableBody" aria-live="polite">
+        <tr>
+          <td colspan="7" class="px-4 py-6 text-center text-slate-500">
+            Loading project reports...
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
   <p id="projects-status" class="mt-3 text-sm text-slate-500" role="status"></p>
+</section>
+<section
+  id="payment-history"
+  class="mt-6 rounded-2xl border border-stone-200 bg-white p-5 shadow-sm"
+  hidden
+>
+  <h3 class="text-lg font-bold text-slate-800">
+    Payment History
+  </h3>
+
+  <p id="payment-history-status" class="mt-2 text-sm text-slate-500"></p>
+
+  <div id="payment-history-list" class="mt-4"></div>
 </section>
       
       <footer class="py-8 text-center text-xs text-slate-400">
