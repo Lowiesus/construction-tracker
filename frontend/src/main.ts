@@ -60,6 +60,15 @@ interface WebhookStats {
   total_attempts: number;
 }
 
+interface WebhookAlert {
+  alert_id: number;
+  event_id: number;
+  alert_type: string;
+  message: string;
+  created_at: string;
+  acknowledged_at: string | null;
+}
+
 const API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000"
 ).replace(/\/+$/, "");
@@ -262,6 +271,163 @@ async function loadWebhookStats(): Promise<void> {
     console.error("Could not load webhook stats:", error);
   } finally {
     section.setAttribute("aria-busy", "false");
+  }
+}
+
+async function loadWebhookAlerts(): Promise<void> {
+  const section = document.querySelector<HTMLElement>("#webhook-alerts");
+  const tableBody = document.querySelector<HTMLTableSectionElement>("#webhook-alerts-body");
+  if (!section || !tableBody) return;
+
+  section.setAttribute("aria-busy", "true");
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/webhook-alerts`, {
+      headers: { Accept: "application/json" },
+    });
+    if (!response.ok) {
+      throw new Error(`Webhook alerts API returned ${response.status}`);
+    }
+
+    const payload: unknown = await response.json();
+    if (!Array.isArray(payload) || !payload.every(isWebhookAlert)) {
+      throw new Error("Webhook alerts API returned invalid data.");
+    }
+
+    renderWebhookAlerts(payload);
+  } catch (error) {
+    console.error("Could not load webhook alerts:", error);
+    renderWebhookAlertMessage("Could not load webhook alerts. Check the API, then refresh.");
+  } finally {
+    section.setAttribute("aria-busy", "false");
+  }
+}
+
+function isWebhookAlert(value: unknown): value is WebhookAlert {
+  if (typeof value !== "object" || value === null) return false;
+  const alert = value as Record<string, unknown>;
+
+  return (
+    Number.isSafeInteger(alert.alert_id) &&
+    Number.isSafeInteger(alert.event_id) &&
+    typeof alert.alert_type === "string" &&
+    typeof alert.message === "string" &&
+    typeof alert.created_at === "string" &&
+    (typeof alert.acknowledged_at === "string" || alert.acknowledged_at === null)
+  );
+}
+
+function renderWebhookAlertMessage(message: string): void {
+  const tableBody = document.querySelector<HTMLTableSectionElement>("#webhook-alerts-body");
+  if (!tableBody) return;
+
+  const row = document.createElement("tr");
+  const cell = document.createElement("td");
+  cell.colSpan = 4;
+  cell.className = "p-3 text-slate-500";
+  cell.textContent = message;
+  row.appendChild(cell);
+  tableBody.replaceChildren(row);
+}
+
+function renderWebhookAlerts(alerts: WebhookAlert[]): void {
+  const tableBody = document.querySelector<HTMLTableSectionElement>(
+    "#webhook-alerts-body"
+  );
+
+  if (!tableBody) return;
+
+  if (alerts.length === 0) {
+    renderWebhookAlertMessage("No webhook alerts.");
+    return;
+  }
+
+  const rows = alerts.map((alert) => {
+    const row = document.createElement("tr");
+    row.className = "border-t border-stone-100";
+
+    const values = [
+      String(alert.event_id),
+      alert.alert_type,
+      alert.message,
+      new Date(alert.created_at).toLocaleString("en-PH"),
+    ];
+
+    for (const value of values) {
+      const cell = document.createElement("td");
+      cell.className = "p-3 align-top text-slate-700";
+      cell.textContent = value;
+      row.appendChild(cell);
+    }
+
+    const statusCell = document.createElement("td");
+    statusCell.className = "p-3 align-top";
+
+    const isAcknowledged = alert.acknowledged_at !== null;
+
+    statusCell.textContent = isAcknowledged
+      ? "Acknowledged"
+      : "Unacknowledged";
+
+    row.appendChild(statusCell);
+
+    const actionCell = document.createElement("td");
+    actionCell.className = "p-3 align-top";
+
+    if (!isAcknowledged) {
+      const button = document.createElement("button");
+
+      button.textContent = "Acknowledge";
+      button.className =
+        "rounded-lg bg-blue-600 px-3 py-2 text-white hover:bg-blue-700";
+
+      button.addEventListener("click", () => {
+        acknowledgeWebhookAlert(alert.alert_id);
+      });
+
+      actionCell.appendChild(button);
+    } else {
+      actionCell.textContent = "Completed";
+    }
+
+    row.appendChild(actionCell);
+
+    return row;
+  });
+
+  tableBody.replaceChildren(...rows);
+}
+
+async function acknowledgeWebhookAlert(alertId: number): Promise<void> {
+  if (!Number.isSafeInteger(alertId) || alertId <= 0) {
+    console.error("Invalid webhook alert ID:", alertId);
+    return;
+  }
+
+  const section = document.querySelector<HTMLElement>("#webhook-alerts");
+  section?.setAttribute("aria-busy", "true");
+
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/webhook-alerts/${alertId}/acknowledge`,
+      {
+        method: "PATCH",
+        headers: {
+          Accept: "application/json",
+        },
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Could not acknowledge webhook alert: ${await response.text()}`);
+    }
+
+    await loadWebhookAlerts();
+  } catch (error) {
+    console.error("Could not acknowledge webhook alert:", error);
+    renderWebhookAlertMessage("Could not acknowledge this alert. Please try again.");
+  } finally {
+    section?.setAttribute("aria-busy", "false");
   }
 }
 
@@ -1065,6 +1231,7 @@ refreshButton?.addEventListener("click", () => {
   void loadProjectOptions();
   void loadProjectReports();
   void loadWebhookStats();
+  void loadWebhookAlerts();
 });
 
 void loadDashboard();
@@ -1075,6 +1242,7 @@ void loadProjectOptions();
 void loadProjectOptions();
 void loadProjectReports();
 void loadWebhookStats();
+void loadWebhookAlerts();
 
 getProjects()
   .then((projects) => {
@@ -1114,3 +1282,4 @@ function recordPayment(invoiceId: number, amount: string) {
     }
   })();
 }
+

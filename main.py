@@ -101,8 +101,46 @@ def save_failed_webhook(invoice_data: dict, error: Exception):
             "Could not save failed webhook to the retry queue."
         )
 
+def create_webhook_alert(event_id: int, error_message: str):
+    with engine.begin() as connection:
+        connection.execute(
+            text("""
+                INSERT INTO webhook_alerts (
+                    event_id,
+                    alert_type,
+                    message
+                )
+                VALUES (
+                    :event_id,
+                    'webhook.failed',
+                    :message
+                )
+                ON CONFLICT (event_id, alert_type)
+                DO NOTHING
+            """),
+            {
+                "event_id": event_id,
+                "message": error_message
+            }
+        )
+
+    logging.warning(
+        "Webhook alert created for event %s",
+        event_id
+    )
+
 def process_pending_webhooks():
     with engine.begin() as connection:
+        failed_events = connection.execute(
+            text("""
+                SELECT event_id, last_error
+                FROM webhook_outbox
+                WHERE status = 'pending'
+                  AND attempts >= :max_attempts
+            """),
+            {"max_attempts": MAX_WEBHOOK_ATTEMPTS}
+        ).mappings().all()
+
         connection.execute(
             text("""
                 UPDATE webhook_outbox
@@ -112,6 +150,13 @@ def process_pending_webhooks():
             """),
             {"max_attempts": MAX_WEBHOOK_ATTEMPTS}
         )
+
+    for event in failed_events:
+        create_webhook_alert(
+            event["event_id"],
+            event["last_error"] or "Maximum webhook attempts exceeded."
+        )
+
     with engine.connect() as connection:
         pending_events = connection.execute(
             text("""
@@ -212,7 +257,7 @@ app.add_middleware(
                    "http://127.0.0.1:5173",
                    ],
     allow_credentials=False,
-    allow_methods=["GET" , "POST", "PUT", "DELETE"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -254,6 +299,53 @@ with engine.connect() as connection:
     print(result.scalar())
 
 #endpoints
+@app.patch("/webhook-alerts/{alert_id}/acknowledge")
+def acknowledge_webhook_alert(alert_id: int):
+    with engine.begin() as connection:
+        result = connection.execute(
+            text("""
+                UPDATE webhook_alerts
+                SET acknowledged_at = CURRENT_TIMESTAMP
+                WHERE alert_id = :alert_id
+                  AND acknowledged_at IS NULL
+                RETURNING
+                    alert_id,
+                    acknowledged_at
+            """),
+            {"alert_id": alert_id}
+        ).mappings().first()
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Alert not found or already acknowledged"
+        )
+
+    return {
+        "message": "Alert acknowledged successfully",
+        "alert_id": result["alert_id"],
+        "acknowledged_at": result["acknowledged_at"]
+    }
+
+@app.get("/webhook-alerts")
+def get_webhook_alerts():
+    with engine.connect() as connection:
+        alerts = connection.execute(
+            text("""
+                SELECT
+                    alert_id,
+                    event_id,
+                    alert_type,
+                    message,
+                    created_at,
+                    acknowledged_at
+                FROM webhook_alerts
+                ORDER BY created_at DESC
+            """)
+        ).mappings().all()
+
+    return [dict(alert) for alert in alerts]
+
 @app.get("/reports/projects")
 def get_project_reports():
 

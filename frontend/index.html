@@ -122,6 +122,31 @@
           </article>
         </div>
       </section>
+      <section class="mb-8" aria-labelledby="webhook-alerts-heading" aria-busy="true" id="webhook-alerts">
+        <h2 id="webhook-alerts-heading" class="mb-4 text-lg font-bold text-slate-800">
+          Webhook Alerts
+        </h2>
+        <div class="overflow-x-auto rounded-xl border border-stone-200 bg-white shadow-sm">
+          <table class="min-w-[640px] w-full text-left text-sm">
+            <caption class="sr-only">Recent webhook delivery alerts</caption>
+            <thead class="bg-slate-50 text-slate-600">
+              <tr>
+                <th scope="col" class="p-3 font-semibold">Event ID</th>
+                <th scope="col" class="p-3 font-semibold">Alert Type</th>
+                <th scope="col" class="p-3 font-semibold">Message</th>
+                <th scope="col" class="p-3 font-semibold">Created At</th>
+                <th scope="col" class="p-3 font-semibold">Status</th>
+                <th scope="col" class="p-3 font-semibold">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="webhook-alerts-body" aria-live="polite">
+              <tr>
+                <td colspan="6" class="p-3 text-slate-500">Loading webhook alerts…</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
       <section class="py-8" aria-labelledby="projects-heading">
   <div class="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
     <div>
