@@ -1,8 +1,16 @@
 import os
 import pandas as pd
 import requests
+import logging
+import json
 
 from dotenv import load_dotenv
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
 from sqlalchemy import create_engine, text
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,6 +18,9 @@ from decimal import Decimal
 from pydantic import BaseModel, Field
 from typing import Literal
 from datetime import date
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+from apscheduler.schedulers.background import BackgroundScheduler
 
 class ProjectCreate(BaseModel):
     project_name: str = Field(min_length=1)
@@ -38,19 +49,145 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 N8N_INVOICE_WEBHOOK_URL = os.getenv("N8N_INVOICE_WEBHOOK_URL")
 N8N_WEBHOOK_SECRET = os.getenv("N8N_WEBHOOK_SECRET")
+MAX_WEBHOOK_ATTEMPTS = 5
 
+retry_strategy = Retry(
+    total=3,
+    connect=3,
+    read=0,
+    status=3,
+    backoff_factor=1,
+    status_forcelist=[500, 502, 503, 504],
+    allowed_methods=["POST"],
+)
+
+http_session = requests.Session()
+adapter = HTTPAdapter(max_retries=retry_strategy)
+http_session.mount("http://", adapter)
+http_session.mount("https://", adapter)
+
+def save_failed_webhook(invoice_data: dict, error: Exception):
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text("""
+                    INSERT INTO webhook_outbox (
+                        event_type,
+                        payload,
+                        status,
+                        attempts,
+                        last_error
+                    )
+                    VALUES (
+                        'invoice.created',
+                        CAST(:payload AS JSONB),
+                        'pending',
+                        1,
+                        :last_error
+                    )
+                """),
+                {
+                    "payload": json.dumps(invoice_data),
+                    "last_error": str(error)
+                }
+            )
+
+        logging.warning(
+            "Failed invoice webhook saved to the retry queue."
+        )
+
+    except Exception:
+        logging.exception(
+            "Could not save failed webhook to the retry queue."
+        )
+
+def process_pending_webhooks():
+    with engine.begin() as connection:
+        connection.execute(
+            text("""
+                UPDATE webhook_outbox
+                SET status = 'failed'
+                WHERE status = 'pending'
+                  AND attempts >= :max_attempts
+            """),
+            {"max_attempts": MAX_WEBHOOK_ATTEMPTS}
+        )
+    with engine.connect() as connection:
+        pending_events = connection.execute(
+            text("""
+                SELECT event_id, payload
+                FROM webhook_outbox
+                WHERE status = 'pending'
+                AND attempts < :max_attempts
+                ORDER BY event_id
+                LIMIT 50
+            """),
+            {"max_attempts": MAX_WEBHOOK_ATTEMPTS}
+        ).mappings().all()
+
+    for event in pending_events:
+        try:
+            response = http_session.post(
+                N8N_INVOICE_WEBHOOK_URL,
+                json=event["payload"],
+                headers={
+                    "X-Webhook-Secret": N8N_WEBHOOK_SECRET
+                },
+                timeout=5
+            )
+
+            response.raise_for_status()
+
+            with engine.begin() as connection:
+                connection.execute(
+                    text("""
+                        UPDATE webhook_outbox
+                        SET status = 'sent',
+                            attempts = attempts + 1,
+                            sent_at = CURRENT_TIMESTAMP,
+                            last_error = NULL
+                        WHERE event_id = :event_id
+                    """),
+                    {"event_id": event["event_id"]}
+                )
+
+            logging.info(
+                "Pending webhook %s successfully delivered.",
+                event["event_id"]
+            )
+
+        except requests.RequestException as error:
+            with engine.begin() as connection:
+                connection.execute(
+                    text("""
+                        UPDATE webhook_outbox
+                        SET attempts = attempts + 1,
+                            last_error = :error
+                        WHERE event_id = :event_id
+                    """),
+                    {
+                        "event_id": event["event_id"],
+                        "error": str(error)
+                    }
+                )
+
+            logging.error(
+                "Pending webhook %s delivery failed: %s",
+                event["event_id"],
+                error
+            )
 
 def send_invoice_to_n8n(invoice_data: dict):
     if not N8N_INVOICE_WEBHOOK_URL:
-        print("n8n webhook URL is not configured.")
+        logging.error("n8n webhook URL is not configured.")
         return
 
     if not N8N_WEBHOOK_SECRET:
-        print("n8n webhook secret is not configured.")
+        logging.error("n8n webhook secret is not configured.")
         return
 
     try:
-        response = requests.post(
+        response = http_session.post(
             N8N_INVOICE_WEBHOOK_URL,
             json=invoice_data,
             headers={
@@ -60,12 +197,14 @@ def send_invoice_to_n8n(invoice_data: dict):
         )
 
         response.raise_for_status()
-        print("Invoice successfully sent to n8n.")
+        logging.info("Invoice successfully sent to n8n.")
 
     except requests.RequestException as error:
-        print(f"Failed to send invoice to n8n: {error}")
+        logging.error("Failed to send invoice to n8n: %s", error)
+        raise
 
 app = FastAPI()
+scheduler = BackgroundScheduler()
 
 app.add_middleware(
     CORSMiddleware,
@@ -406,17 +545,51 @@ def get_invoices():
         for invoice in invoices
     ]
 
+@app.get("/webhook-stats")
+def get_webhook_stats():
+    with engine.connect() as connection:
+        result = connection.execute(
+            text("""
+                SELECT
+                    COUNT(*) AS total_events,
+
+                    COUNT(*) FILTER (
+                        WHERE status = 'pending'
+                    ) AS pending_events,
+
+                    COUNT(*) FILTER (
+                        WHERE status = 'sent'
+                    ) AS sent_events,
+
+                    COUNT(*) FILTER (
+                        WHERE status = 'failed'
+                    ) AS failed_events,
+
+                    COALESCE(SUM(attempts), 0) AS total_attempts
+
+                FROM webhook_outbox;
+            """)
+        ).mappings().one()
+
+    return {
+        "total_events": result["total_events"],
+        "pending_events": result["pending_events"],
+        "sent_events": result["sent_events"],
+        "failed_events": result["failed_events"],
+        "total_attempts": result["total_attempts"]
+    }
+
 @app.post("/invoices")
 def create_invoice(invoice: InvoiceCreate):
     with engine.begin() as connection:
         project = connection.execute(
             text("""
-                SELECT project_id
+                SELECT project_id, project_name
                 FROM projects
                 WHERE project_id = :project_id
             """),
             {"project_id": invoice.project_id}
-        ).first()
+        ).mappings().first()
 
         if project is None:
             raise HTTPException(status_code=404, detail="Project not found")
@@ -455,6 +628,7 @@ def create_invoice(invoice: InvoiceCreate):
 
     # Prepare the invoice data after the transaction commits.
     invoice_data = {
+        "event_id": result["invoice_id"],
         "invoice_id": result["invoice_id"],
         "project_id": result["project_id"],
         "project_name": project_name,
@@ -464,7 +638,11 @@ def create_invoice(invoice: InvoiceCreate):
     }
 
     # Send the invoice information to n8n.
-    send_invoice_to_n8n(invoice_data)
+    try:
+        send_invoice_to_n8n(invoice_data)
+    except requests.RequestException as error:
+        logging.error("Failed to send invoice to n8n: %s", error)
+        save_failed_webhook(invoice_data, error)
 
     return invoice_data
 
@@ -634,3 +812,24 @@ def get_invoice_payments(invoice_id: int):
         }
         for payment in payments
     ]
+
+@app.on_event("startup")
+def start_scheduler():
+    scheduler.add_job(
+        process_pending_webhooks,
+        trigger="interval",
+        seconds=30,
+        id="pending_webhook_processor",
+        replace_existing=True,
+        max_instances=1
+    )
+
+    scheduler.start()
+    logging.info("Webhook retry scheduler started.")
+
+
+@app.on_event("shutdown")
+def stop_scheduler():
+    if scheduler.running:
+        scheduler.shutdown(wait=False)
+        logging.info("Webhook retry scheduler stopped.")

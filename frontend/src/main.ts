@@ -52,6 +52,14 @@ interface Invoice {
   outstanding_balance: string;
 }
 
+interface WebhookStats {
+  total_events: number;
+  pending_events: number;
+  sent_events: number;
+  failed_events: number;
+  total_attempts: number;
+}
+
 const API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000"
 ).replace(/\/+$/, "");
@@ -97,6 +105,16 @@ const projectFormStatus =
 
 const invoicesTableBody =
   document.querySelector<HTMLTableSectionElement>("#invoices-table-body");
+
+const webhookTotal = document.getElementById("webhook-total");
+
+const webhookPending = document.getElementById("webhook-pending");
+
+const webhookSent = document.getElementById("webhook-sent");
+
+const webhookFailed = document.getElementById("webhook-failed");
+
+const webhookAttempts = document.getElementById("webhook-attempts");
 
 const invoicesStatus =
   document.querySelector<HTMLParagraphElement>("#invoices-status");
@@ -216,6 +234,70 @@ async function getProjectReports(): Promise<ProjectReport[]> {
 
   const reports: ProjectReport[] = await response.json();
   return reports;
+}
+
+async function loadWebhookStats(): Promise<void> {
+  const section = document.querySelector<HTMLElement>("#webhook-monitoring");
+  if (!section) return;
+
+  section.setAttribute("aria-busy", "true");
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/webhook-stats`, {
+      headers: { Accept: "application/json" },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Webhook stats API returned ${response.status}`);
+    }
+
+    const stats: unknown = await response.json();
+    if (!isWebhookStats(stats)) {
+      throw new Error("Webhook stats API returned invalid data.");
+    }
+
+    renderWebhookStats(stats);
+    console.info("Webhook stats loaded successfully.");
+  } catch (error) {
+    console.error("Could not load webhook stats:", error);
+  } finally {
+    section.setAttribute("aria-busy", "false");
+  }
+}
+
+function renderWebhookStats(stats: WebhookStats): void {
+  if (
+    !webhookTotal ||
+    !webhookPending ||
+    !webhookSent ||
+    !webhookFailed ||
+    !webhookAttempts
+  ) {
+    console.error("Webhook monitoring elements not found.");
+    return;
+  }
+
+  webhookTotal.textContent = String(stats.total_events);
+  webhookPending.textContent = String(stats.pending_events);
+  webhookSent.textContent = String(stats.sent_events);
+  webhookFailed.textContent = String(stats.failed_events);
+  webhookAttempts.textContent = String(stats.total_attempts);
+}
+
+function isWebhookStats(value: unknown): value is WebhookStats {
+  if (typeof value !== "object" || value === null) return false;
+  const stats = value as Record<string, unknown>;
+
+  return [
+    "total_events",
+    "pending_events",
+    "sent_events",
+    "failed_events",
+    "total_attempts",
+  ].every(
+    (field) =>
+      Number.isSafeInteger(stats[field]) && Number(stats[field]) >= 0
+  );
 }
 
 async function loadProjectOptions(): Promise<void> {
@@ -982,6 +1064,7 @@ refreshButton?.addEventListener("click", () => {
   void loadInvoices();
   void loadProjectOptions();
   void loadProjectReports();
+  void loadWebhookStats();
 });
 
 void loadDashboard();
@@ -991,6 +1074,7 @@ void loadInvoices();
 void loadProjectOptions();
 void loadProjectOptions();
 void loadProjectReports();
+void loadWebhookStats();
 
 getProjects()
   .then((projects) => {

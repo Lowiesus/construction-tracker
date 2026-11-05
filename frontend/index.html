@@ -95,6 +95,33 @@
           </article>
         </div>
       </section>
+      <section class="mb-6" aria-labelledby="webhook-monitoring-heading" aria-busy="true" id="webhook-monitoring">
+        <h2 id="webhook-monitoring-heading" class="mb-4 text-lg font-bold text-slate-800">
+          Webhook Monitoring
+        </h2>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <article class="rounded-xl border border-stone-200 bg-white p-4 shadow-sm">
+            <h3 class="text-sm text-slate-500">Total Events</h3>
+            <p id="webhook-total" class="mt-2 text-2xl font-bold text-slate-800" aria-live="polite">—</p>
+          </article>
+          <article class="rounded-xl border border-stone-200 bg-white p-4 shadow-sm">
+            <h3 class="text-sm text-slate-500">Pending</h3>
+            <p id="webhook-pending" class="mt-2 text-2xl font-bold text-slate-800" aria-live="polite">—</p>
+          </article>
+          <article class="rounded-xl border border-stone-200 bg-white p-4 shadow-sm">
+            <h3 class="text-sm text-slate-500">Sent</h3>
+            <p id="webhook-sent" class="mt-2 text-2xl font-bold text-slate-800" aria-live="polite">—</p>
+          </article>
+          <article class="rounded-xl border border-stone-200 bg-white p-4 shadow-sm">
+            <h3 class="text-sm text-slate-500">Failed</h3>
+            <p id="webhook-failed" class="mt-2 text-2xl font-bold text-slate-800" aria-live="polite">—</p>
+          </article>
+          <article class="rounded-xl border border-stone-200 bg-white p-4 shadow-sm">
+            <h3 class="text-sm text-slate-500">Total Attempts</h3>
+            <p id="webhook-attempts" class="mt-2 text-2xl font-bold text-slate-800" aria-live="polite">—</p>
+          </article>
+        </div>
+      </section>
       <section class="py-8" aria-labelledby="projects-heading">
   <div class="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
     <div>
