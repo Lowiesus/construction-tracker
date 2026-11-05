@@ -1227,22 +1227,39 @@ refreshButton?.addEventListener("click", () => {
   void loadDashboard();
   void loadProjects();
   void loadInvoices();
-  void loadInvoices();
   void loadProjectOptions();
   void loadProjectReports();
   void loadWebhookStats();
   void loadWebhookAlerts();
 });
 
+// Initial dashboard loading
 void loadDashboard();
 void loadProjects();
 void loadInvoices();
-void loadInvoices();
-void loadProjectOptions();
 void loadProjectOptions();
 void loadProjectReports();
 void loadWebhookStats();
 void loadWebhookAlerts();
+    // Automatically refresh webhook monitoring every 10 seconds
+let isWebhookRefreshRunning = false;
+
+setInterval(async () => {
+  if (isWebhookRefreshRunning) {
+    return;
+  }
+
+  isWebhookRefreshRunning = true;
+
+  try {
+    await Promise.all([
+      loadWebhookStats(),
+      loadWebhookAlerts(),
+    ]);
+  } finally {
+    isWebhookRefreshRunning = false;
+  }
+}, 10000);
 
 getProjects()
   .then((projects) => {
